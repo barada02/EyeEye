@@ -20,10 +20,15 @@ On Windows you can also use `py -3 eye.py`. You need Python 3 with `numpy` and `
 | Key / input      | What it does                                        |
 |------------------|-----------------------------------------------------|
 | Mouse            | The eye follows the cursor                          |
+| Mouse wheel      | Smooth scrub / zoom through the worlds              |
 | Hold left click  | Shine a light: the pupil constricts                 |
 | Space            | Travel deeper, into the next world                  |
 | Backspace        | Travel back out to the previous world               |
+| 1 - 6            | Jump directly to any world                          |
 | A                | Autoplay the whole journey (good for recording)     |
+| P                | Pause / resume time                                 |
+| C                | Cycle color theme (Amber CRT, Matrix, Cyberpunk...) |
+| M                | Toggle ambient soundscape                           |
 | B                | Blink                                               |
 | + / -            | Bigger / smaller characters                         |
 | G                | Toggle the background glow                          |
@@ -44,5 +49,6 @@ On Windows you can also use `py -3 eye.py`. You need Python 3 with `numpy` and `
 ## Files
 
 - `eye.py`: the app, all the worlds and the text renderer
+- `sound.py`: procedural ambient audio engine (pure NumPy synthesis)
 - `earth_map.py`: rough continent outlines for the globe
 - `requirements.txt`: dependencies

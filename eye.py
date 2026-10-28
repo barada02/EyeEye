@@ -6,10 +6,15 @@ to ... and what is waiting inside. Then it begins again.
 
 Controls
   mouse         the eye follows the cursor
+  scroll        scrub / travel smoothly between worlds
   hold click    shine a light - the pupil constricts
   space         travel deeper
   backspace     travel back out
+  1 - 6         jump directly to a world
   A             autoplay the whole journey
+  P             pause / resume
+  C             cycle color theme
+  M             toggle ambient sound
   B             blink
   + / -         bigger / smaller characters
   G             toggle background glow
@@ -28,6 +33,13 @@ import numpy as np
 import pygame
 
 from earth_map import land_mask
+try:
+    from sound import SoundEngine
+except ImportError:
+    class SoundEngine:
+        def __init__(self): self.enabled = False
+        def toggle_mute(self): return True
+        def update(self, *a): pass
 
 LEVELS = 20      # brightness steps in each character ramp
 VARIANTS = 6     # interchangeable characters per step (cells drift between them)
@@ -912,6 +924,24 @@ class Journey:
         self.target = math.ceil(self.pos - 1e-9) - 1
         self.rest = 0.0
 
+    def scrub(self, delta):
+        self.auto = False
+        self.rest = 0.0
+        self.target = self.pos + delta
+
+    def jump_to(self, idx):
+        self.auto = False
+        self.rest = 0.0
+        n = len(self.worlds)
+        curr = self.pos % n
+        target_norm = idx % n
+        diff = target_norm - curr
+        if diff > n / 2:
+            diff -= n
+        elif diff < -n / 2:
+            diff += n
+        self.target = self.pos + diff
+
     def update(self, dt):
         self.t += dt
         n = len(self.worlds)
@@ -970,16 +1000,26 @@ class Journey:
             self.R1 = self.rng.random((H, W), dtype=np.float32)
             self.R2 = self.rng.random((H, W), dtype=np.float32)
 
-    def frame(self, glyphs, W, H, glow=True):
+    def _grid(self, W, H, cw, ch, half):
+        key = (W, H, cw, ch, half)
+        if getattr(self, "_grid_key", None) != key:
+            self._grid_key = key
+            gx = (((np.arange(W, dtype=np.float32) + 0.5) * cw - W * cw / 2) / half)
+            gy = (-((np.arange(H, dtype=np.float32) + 0.5) * ch - H * ch / 2) / half)
+            sx, sy = np.meshgrid(gx, gy)
+            self._sx = np.ascontiguousarray(sx.ravel())
+            self._sy = np.ascontiguousarray(sy.ravel())
+            self._cells_idx = np.arange(W * H)
+        return self._sx, self._sy, self._cells_idx
+
+    def frame(self, glyphs, W, H, glow=True, theme_idx=0):
         """Shade one frame. Returns character ids (H, W) and uint8 fg/bg colours (H, W, 3)."""
         self._cells(W, H)
         fr = Frame(self, glyphs, W, H)
         cw, ch, half = glyphs.cw, glyphs.ch, fr.half
-        sx, sy = np.meshgrid((((np.arange(W) + 0.5) * cw - W * cw / 2) / half).astype(np.float32),
-                             (-((np.arange(H) + 0.5) * ch - H * ch / 2) / half).astype(np.float32))
-        sx, sy = sx.ravel(), sy.ravel()
+        sx, sy, cells_idx = self._grid(W, H, cw, ch, half)
         base = math.floor(self.pos)
-        col, fam, ov = self.render(base, sx, sy, np.arange(W * H), (1.0, 0.0, 0.0), self.pos - base, 2, fr)
+        col, fam, ov = self.render(base, sx, sy, cells_idx, (1.0, 0.0, 0.0), self.pos - base, 2, fr)
         col, fam, ov = col.reshape(H, W, 3), fam.reshape(H, W), ov.reshape(H, W)
 
         vig = 1 - 0.55 * ss(0.7, 1.6, np.hypot(sx * 0.6, sy)).reshape(H, W)
@@ -1001,6 +1041,18 @@ class Journey:
         idx[edge] = glyphs.strokes[stroke_index(np.degrees(np.arctan2(gyL[edge], gxL[edge])) + 90)]
         idx = np.where(ov >= 0, ov, idx)
 
+        # ---- palette theme remapping
+        if theme_idx == 1:       # Amber CRT
+            col = L[..., None] * np.array([1.0, 0.68, 0.18], np.float32)
+        elif theme_idx == 2:     # Matrix Green
+            col = L[..., None] * np.array([0.22, 1.0, 0.38], np.float32)
+        elif theme_idx == 3:     # Cyberpunk
+            warmth = np.clip((col[..., 0] - col[..., 2]) * 1.4 + 0.5, 0.0, 1.0)[..., None]
+            neon = warmth * np.array([1.0, 0.15, 0.72], np.float32) + (1.0 - warmth) * np.array([0.0, 0.92, 1.0], np.float32)
+            col = (L[..., None] ** 0.85) * neon
+        elif theme_idx == 4:     # Silver Ice
+            col = L[..., None] * np.array([0.85, 0.93, 1.0], np.float32)
+
         # ---- colours: glyph density carries brightness, so keep the hue vivid
         mx = col.max(-1, keepdims=True)
         disp = col / np.maximum(mx, 1e-4) * (0.12 + 0.88 * np.clip(mx, 0, 1) ** 0.75)
@@ -1017,14 +1069,22 @@ class Journey:
         return idx, fg, bg
 
 
-def draw(journey, glyphs, W, H, glow=True):
-    return glyphs.compose(*journey.frame(glyphs, W, H, glow))
+def draw(journey, glyphs, W, H, glow=True, theme_idx=0):
+    return glyphs.compose(*journey.frame(glyphs, W, H, glow, theme_idx))
 
 
 # ------------------------------------------------------------------ app
 
-HELP = ("mouse: look   click: light   space: deeper   backspace: back   A: autoplay   B: blink   "
-        "+/-: size   G: glow   S: screenshot   H: help   Esc: quit")
+THEMES = (
+    ("Natural", "Original vivid colors"),
+    ("Amber CRT", "Phosphor amber terminal"),
+    ("Matrix Green", "Digital phosphor green"),
+    ("Cyberpunk", "Neon cyan & magenta"),
+    ("Silver Ice", "Moonlit monochrome"),
+)
+
+HELP = ("mouse: look/scrub   space/back: travel   1-6: worlds   A: auto   "
+        "P: pause   C: theme   M: sound   B: blink   +/-: size   G: glow   S: save   H: help   Esc: quit")
 
 
 def main():
@@ -1042,8 +1102,13 @@ def main():
     hud = pygame.font.SysFont("consolas,couriernew", 14)
     journey = Journey()
     eye = journey.eye
+    audio = SoundEngine()
     clock = pygame.time.Clock()
     glow, help_until, fullscreen = True, 8.0, False
+    theme_idx = 0
+    paused = False
+    toast_text = ""
+    toast_until = 0.0
 
     while True:
         dt = min(clock.tick(60) / 1000.0, 0.05)
@@ -1051,7 +1116,10 @@ def main():
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 return
-            if ev.type == pygame.KEYDOWN:
+            if ev.type == pygame.MOUSEWHEEL:
+                journey.scrub(ev.y * 0.22)
+                toast_text, toast_until = f"Scrubbing (depth: {journey.pos:.1f})", time.time() + 1.2
+            elif ev.type == pygame.KEYDOWN:
                 k = ev.key
                 if k == pygame.K_ESCAPE:
                     return
@@ -1059,9 +1127,24 @@ def main():
                     journey.forward()
                 elif k == pygame.K_BACKSPACE:
                     journey.back()
+                elif k in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6):
+                    w_idx = k - pygame.K_1
+                    names = ("Eye", "Galaxy", "Solar System", "Earth", "Home", "Heart")
+                    journey.jump_to(w_idx)
+                    toast_text, toast_until = f"World: {names[w_idx]}", time.time() + 1.8
                 elif k == pygame.K_a:
                     journey.auto = not journey.auto
                     journey.rest = 0.0
+                    toast_text, toast_until = "Autoplay: ON" if journey.auto else "Autoplay: OFF", time.time() + 1.5
+                elif k == pygame.K_p:
+                    paused = not paused
+                    toast_text, toast_until = "PAUSED" if paused else "RESUMED", time.time() + 1.5
+                elif k == pygame.K_c:
+                    theme_idx = (theme_idx + 1) % len(THEMES)
+                    toast_text, toast_until = f"Theme: {THEMES[theme_idx][0]}", time.time() + 1.8
+                elif k == pygame.K_m:
+                    muted = audio.toggle_mute()
+                    toast_text, toast_until = "Sound: MUTED" if muted else "Sound: ON", time.time() + 1.5
                 elif k == pygame.K_b:
                     eye.blink()
                 elif k in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
@@ -1072,11 +1155,13 @@ def main():
                     glyphs = Glyphs(font_px)
                 elif k == pygame.K_g:
                     glow = not glow
+                    toast_text, toast_until = "Glow: ON" if glow else "Glow: OFF", time.time() + 1.2
                 elif k == pygame.K_h:
                     help_until = 0.0 if journey.t < help_until else journey.t + 1e9
                 elif k == pygame.K_s:
                     name = time.strftime("eye_%Y%m%d_%H%M%S.png")
                     pygame.image.save(screen, name)
+                    toast_text, toast_until = f"Saved {name}", time.time() + 2.0
                     print("saved", name)
                 elif k == pygame.K_F11:
                     fullscreen = not fullscreen
@@ -1090,11 +1175,22 @@ def main():
                 eye.look_at(EyeWorld.cam0[0] + (ev.pos[0] - sw / 2) / (sh / 2) / EyeWorld.zoom0,
                             EyeWorld.cam0[1] - (ev.pos[1] - sh / 2) / (sh / 2) / EyeWorld.zoom0)
 
-        journey.update(dt)
+        if not paused:
+            journey.update(dt)
+        audio.update(journey.pos, 0.0 if paused else journey.speed, dt)
+
         sw, sh = screen.get_size()
         W, H = max(sw // glyphs.cw, 1), max(sh // glyphs.ch, 1)
         screen.fill((0, 0, 0))
-        screen.blit(draw(journey, glyphs, W, H, glow), ((sw - W * glyphs.cw) // 2, (sh - H * glyphs.ch) // 2))
+        screen.blit(draw(journey, glyphs, W, H, glow, theme_idx), ((sw - W * glyphs.cw) // 2, (sh - H * glyphs.ch) // 2))
+
+        now = time.time()
+        if now < toast_until and toast_text:
+            t_alpha = int(255 * min(1.0, (toast_until - now) / 0.4))
+            t_surf = hud.render(f"  {toast_text}  ", True, (240, 240, 240), (25, 25, 25))
+            t_surf.set_alpha(t_alpha)
+            screen.blit(t_surf, (sw - t_surf.get_width() - 16, 16))
+
         if journey.t < help_until:
             text = hud.render(HELP, True, (150, 150, 150), (0, 0, 0))
             text.set_alpha(int(255 * min(1.0, help_until - journey.t)))
