@@ -13,7 +13,7 @@ Controls
   1 - 6         jump directly to a world
   A             autoplay the whole journey
   P             pause / resume
-  C             cycle color theme
+  C             cycle eye style (natural blue, emerald, original)
   M             toggle ambient sound
   B             blink
   + / -         bigger / smaller characters
@@ -409,25 +409,56 @@ class EyeWorld:
         ho, hl = y - up, lo - y                     # height above / depth below the lids
         near = ss(1.15, 1.0, at)
 
+        theme = getattr(fr.j, "eye_theme", 0)
+
+        # ---- skin and eye palettes
+        if theme == 0:    # Natural Human (Ocean Blue & Natural Fair/Peach Skin)
+            base_skin = rgb(0.86, 0.68, 0.56)
+            crease_shade = 0.35
+            liner_col = rgb(0.12, 0.08, 0.07)
+            waterline_col = rgb(0.86, 0.52, 0.46)
+            hair_col = rgb(0.18, 0.11, 0.08)
+            sclera_col = rgb(0.96, 0.95, 0.94)
+            vein_col = rgb(0.80, 0.22, 0.18)
+            caruncle_col = rgb(0.88, 0.52, 0.46)
+        elif theme == 1:  # Natural Human (Emerald Green & Warm Skin)
+            base_skin = rgb(0.84, 0.67, 0.54)
+            crease_shade = 0.37
+            liner_col = rgb(0.10, 0.07, 0.06)
+            waterline_col = rgb(0.85, 0.50, 0.44)
+            hair_col = rgb(0.14, 0.09, 0.06)
+            sclera_col = rgb(0.95, 0.94, 0.93)
+            vein_col = rgb(0.78, 0.20, 0.16)
+            caruncle_col = rgb(0.86, 0.48, 0.43)
+        else:             # Original (Bronze Skin & Amber Iris)
+            base_skin = rgb(0.50, 0.28, 0.19)
+            crease_shade = 0.42
+            liner_col = rgb(0.07, 0.045, 0.035)
+            waterline_col = rgb(0.78, 0.44, 0.36)
+            hair_col = rgb(0.16, 0.09, 0.06)
+            sclera_col = rgb(0.90, 0.85, 0.80)
+            vein_col = rgb(0.75, 0.18, 0.15)
+            caruncle_col = rgb(0.84, 0.45, 0.40)
+
         # ---- skin
-        skin = rgb(0.50, 0.28, 0.19) * skin_tex[..., None]
+        skin = base_skin * skin_tex[..., None]
         t2 = x / (WO * 1.12)
         t2c = np.clip(t2, -1, 1)
         yc = 0.035 * t2c + 0.56 * (1 - t2c * t2c) ** 0.7 + 0.025
         crease_on = ss(1.0, 0.85, np.abs(t2))
         dc = y - yc
         shade = np.ones_like(x)
-        shade -= 0.42 * np.exp(-(dc / 0.028) ** 2) * crease_on * (0.5 + 0.5 * ou)
+        shade -= crease_shade * np.exp(-(dc / 0.028) ** 2) * crease_on * (0.5 + 0.5 * ou)
         shade -= 0.18 * np.exp(-((dc + 0.05) / 0.04) ** 2) * crease_on
         shade += 0.14 * np.exp(-((ho - 0.09) / 0.07) ** 2) * upper * (dc < 0)
         shade += 0.12 * np.exp(-((y - 0.95) / 0.15) ** 2)
         shade -= 0.20 * np.exp(-((hl - 0.11) / 0.045) ** 2) * lower
         shade += 0.10 * np.exp(-((hl - 0.05) / 0.03) ** 2) * lower
-        shade -= 0.30 * ss(-0.7, -1.7, x) * np.exp(-((y - 0.15) / 0.6) ** 2)
+        shade -= 0.25 * ss(-0.7, -1.7, x) * np.exp(-((y - 0.15) / 0.6) ** 2)
         skin *= shade[..., None]
         liner = np.exp(-(np.maximum(ho, 0) / (0.012 + 0.012 * ss(-0.3, 1.0, tc))) ** 2)
-        skin = mix(skin, rgb(0.07, 0.045, 0.035), 0.85 * liner * upper * near)
-        skin = mix(skin, rgb(0.78, 0.44, 0.36), 0.6 * np.exp(-(np.maximum(hl, 0) / 0.016) ** 2) * lower * near)
+        skin = mix(skin, liner_col, 0.85 * liner * upper * near)
+        skin = mix(skin, waterline_col, 0.6 * np.exp(-(np.maximum(hl, 0) / 0.016) ** 2) * lower * near)
 
         # ---- lashes: a fan of strands rooted along each lid
         slope = 1.25 * tc + 0.15
@@ -449,7 +480,7 @@ class EyeWorld:
         lash = np.maximum(lash_up, lash_lo)
         hair = np.maximum(lash, brow * (1 - inside))
         hair_phi = np.where(lash > brow, lash_phi, brow_phi)
-        skin = mix(skin, rgb(0.16, 0.09, 0.06), 0.85 * hair)
+        skin = mix(skin, hair_col, 0.85 * hair)
 
         col = skin
         fam = np.full(k, SKIN, np.int64)
@@ -465,9 +496,9 @@ class EyeWorld:
         bz = np.sqrt(np.clip(BALL ** 2 - X * X - BY * BY, 0.02, None))
         lam = np.clip((-0.35 * X + 0.45 * BY + 0.82 * bz) / BALL, 0, 1)
         occ = (1 - 0.6 * np.exp(-np.maximum(DU, 0) / 0.06)) * (1 - 0.30 * np.exp(-np.maximum(DL, 0) / 0.03))
-        ball = rgb(0.90, 0.85, 0.80) * (0.50 + 0.50 * lam)[:, None]
-        ball = mix(ball, rgb(0.86, 0.55, 0.48), 0.55 * ss(0.45, 1.0, AT))
-        ball = mix(ball, rgb(0.75, 0.18, 0.15), np.clip(0.7 * vein[ii] * ss(0.3, 0.95, AT), 0, 1))
+        ball = sclera_col * (0.50 + 0.50 * lam)[:, None]
+        ball = mix(ball, rgb(0.86, 0.55, 0.48), 0.50 * ss(0.45, 1.0, AT))
+        ball = mix(ball, vein_col, np.clip(0.6 * vein[ii] * ss(0.3, 0.95, AT), 0, 1))
         fam_e = np.full(ii.size, SCLERA, np.int64)
 
         # iris, foreshortened as the ball turns
@@ -483,14 +514,33 @@ class EyeWorld:
             f2 = bil(TN, a * 2304 + 91, rs * 32 + 40)
             fib = ss(0.28, 0.80, 0.55 * f1 + 0.45 * f2)
             rpn = rp / RI * (1 + 0.04 * (bil(TN, a * 512, np.full_like(a, 7.0)) - 0.5))
-            iris = mix(rgb(1.00, 0.72, 0.30), rgb(0.70, 0.36, 0.13), ss(rpn + 0.04, 0.60, rs))
-            iris = mix(iris, rgb(0.32, 0.14, 0.05), ss(0.60, 0.97, rs))
-            iris *= (0.30 + 1.0 * fib)[:, None]
-            collar = np.exp(-((rs - rpn - 0.17 - 0.06 * (f1 - 0.5)) / 0.05) ** 2)
-            iris += rgb(0.30, 0.20, 0.07) * collar[:, None]
-            crypt = (ss(0.66, 0.74, bil(TN, a * 1024 + 33, rs * 10 + 11))
-                     * ss(rpn + 0.08, rpn + 0.22, rs) * ss(0.92, 0.75, rs))
-            iris *= ((1 - 0.65 * crypt) * (1 - 0.85 * ss(0.80, 1.0, rs)) * (0.75 + 0.25 * lam[s]))[:, None]
+            if theme == 0:    # Natural Human (Ocean Blue & Hazel Ring)
+                iris = mix(rgb(0.92, 0.72, 0.35), rgb(0.24, 0.64, 0.90), ss(rpn + 0.03, 0.50, rs))
+                iris = mix(iris, rgb(0.10, 0.26, 0.48), ss(0.55, 0.98, rs))
+                iris *= (0.35 + 0.95 * fib)[:, None]
+                collar = np.exp(-((rs - rpn - 0.17 - 0.06 * (f1 - 0.5)) / 0.05) ** 2)
+                iris += rgb(0.45, 0.32, 0.12) * collar[:, None]
+                crypt = (ss(0.66, 0.74, bil(TN, a * 1024 + 33, rs * 10 + 11))
+                         * ss(rpn + 0.08, rpn + 0.22, rs) * ss(0.92, 0.75, rs))
+                iris *= ((1 - 0.60 * crypt) * (1 - 0.80 * ss(0.80, 1.0, rs)) * (0.75 + 0.25 * lam[s]))[:, None]
+            elif theme == 1:  # Natural Human (Emerald Green & Golden Hazel)
+                iris = mix(rgb(0.90, 0.70, 0.30), rgb(0.24, 0.66, 0.38), ss(rpn + 0.03, 0.50, rs))
+                iris = mix(iris, rgb(0.10, 0.30, 0.18), ss(0.55, 0.98, rs))
+                iris *= (0.35 + 0.95 * fib)[:, None]
+                collar = np.exp(-((rs - rpn - 0.17 - 0.06 * (f1 - 0.5)) / 0.05) ** 2)
+                iris += rgb(0.42, 0.30, 0.10) * collar[:, None]
+                crypt = (ss(0.66, 0.74, bil(TN, a * 1024 + 33, rs * 10 + 11))
+                         * ss(rpn + 0.08, rpn + 0.22, rs) * ss(0.92, 0.75, rs))
+                iris *= ((1 - 0.60 * crypt) * (1 - 0.80 * ss(0.80, 1.0, rs)) * (0.75 + 0.25 * lam[s]))[:, None]
+            else:             # Original (Bronze & Amber)
+                iris = mix(rgb(1.00, 0.72, 0.30), rgb(0.70, 0.36, 0.13), ss(rpn + 0.04, 0.60, rs))
+                iris = mix(iris, rgb(0.32, 0.14, 0.05), ss(0.60, 0.97, rs))
+                iris *= (0.30 + 1.0 * fib)[:, None]
+                collar = np.exp(-((rs - rpn - 0.17 - 0.06 * (f1 - 0.5)) / 0.05) ** 2)
+                iris += rgb(0.30, 0.20, 0.07) * collar[:, None]
+                crypt = (ss(0.66, 0.74, bil(TN, a * 1024 + 33, rs * 10 + 11))
+                         * ss(rpn + 0.08, rpn + 0.22, rs) * ss(0.92, 0.75, rs))
+                iris *= ((1 - 0.65 * crypt) * (1 - 0.85 * ss(0.80, 1.0, rs)) * (0.75 + 0.25 * lam[s]))[:, None]
             iris_m = ss(1.02, 0.97, rs)
             pupil_m = ss(rpn + 0.02, rpn - 0.02, rs)
             ball[s] = mix(ball[s], iris, iris_m)
@@ -503,7 +553,7 @@ class EyeWorld:
         ball *= occ[:, None]
         ball = mix(ball, rgb(0.80, 0.42, 0.36), 0.65 * np.exp(-(np.maximum(DL, 0) / 0.02) ** 2))
         car = np.exp(-(((X + WO * 0.90) / 0.06) ** 2 + ((Y + 0.0315) / 0.045) ** 2))
-        ball = mix(ball, rgb(0.84, 0.45, 0.40), 0.9 * car)
+        ball = mix(ball, caruncle_col, 0.9 * car)
         col[ii] = mix(col[ii], ball, INS)
         fam[ii] = np.where(INS > 0.5, fam_e, SKIN)
 
@@ -914,6 +964,7 @@ class Journey:
         self.stars = Stars(3500, self.rng)
         self.orbit_t = 0.0
         self.earth_t = 0.0
+        self.eye_theme = 0
         self._shape = None
 
     def forward(self):
@@ -1012,7 +1063,7 @@ class Journey:
             self._cells_idx = np.arange(W * H)
         return self._sx, self._sy, self._cells_idx
 
-    def frame(self, glyphs, W, H, glow=True, theme_idx=0):
+    def frame(self, glyphs, W, H, glow=True):
         """Shade one frame. Returns character ids (H, W) and uint8 fg/bg colours (H, W, 3)."""
         self._cells(W, H)
         fr = Frame(self, glyphs, W, H)
@@ -1041,18 +1092,6 @@ class Journey:
         idx[edge] = glyphs.strokes[stroke_index(np.degrees(np.arctan2(gyL[edge], gxL[edge])) + 90)]
         idx = np.where(ov >= 0, ov, idx)
 
-        # ---- palette theme remapping
-        if theme_idx == 1:       # Amber CRT
-            col = L[..., None] * np.array([1.0, 0.68, 0.18], np.float32)
-        elif theme_idx == 2:     # Matrix Green
-            col = L[..., None] * np.array([0.22, 1.0, 0.38], np.float32)
-        elif theme_idx == 3:     # Cyberpunk
-            warmth = np.clip((col[..., 0] - col[..., 2]) * 1.4 + 0.5, 0.0, 1.0)[..., None]
-            neon = warmth * np.array([1.0, 0.15, 0.72], np.float32) + (1.0 - warmth) * np.array([0.0, 0.92, 1.0], np.float32)
-            col = (L[..., None] ** 0.85) * neon
-        elif theme_idx == 4:     # Silver Ice
-            col = L[..., None] * np.array([0.85, 0.93, 1.0], np.float32)
-
         # ---- colours: glyph density carries brightness, so keep the hue vivid
         mx = col.max(-1, keepdims=True)
         disp = col / np.maximum(mx, 1e-4) * (0.12 + 0.88 * np.clip(mx, 0, 1) ** 0.75)
@@ -1069,22 +1108,20 @@ class Journey:
         return idx, fg, bg
 
 
-def draw(journey, glyphs, W, H, glow=True, theme_idx=0):
-    return glyphs.compose(*journey.frame(glyphs, W, H, glow, theme_idx))
+def draw(journey, glyphs, W, H, glow=True):
+    return glyphs.compose(*journey.frame(glyphs, W, H, glow))
 
 
 # ------------------------------------------------------------------ app
 
-THEMES = (
-    ("Natural", "Original vivid colors"),
-    ("Amber CRT", "Phosphor amber terminal"),
-    ("Matrix Green", "Digital phosphor green"),
-    ("Cyberpunk", "Neon cyan & magenta"),
-    ("Silver Ice", "Moonlit monochrome"),
+EYE_THEMES = (
+    ("Natural Human (Blue)", "Lifelike skin & ocean blue-hazel eye"),
+    ("Natural Human (Emerald)", "Lifelike skin & emerald green-hazel eye"),
+    ("Original (Bronze & Amber)", "Original deep bronze skin & amber eye"),
 )
 
 HELP = ("mouse: look/scrub   space/back: travel   1-6: worlds   A: auto   "
-        "P: pause   C: theme   M: sound   B: blink   +/-: size   G: glow   S: save   H: help   Esc: quit")
+        "P: pause   C: eye style   M: sound   B: blink   +/-: size   G: glow   S: save   H: help   Esc: quit")
 
 
 def main():
@@ -1105,7 +1142,6 @@ def main():
     audio = SoundEngine()
     clock = pygame.time.Clock()
     glow, help_until, fullscreen = True, 8.0, False
-    theme_idx = 0
     paused = False
     toast_text = ""
     toast_until = 0.0
@@ -1140,8 +1176,8 @@ def main():
                     paused = not paused
                     toast_text, toast_until = "PAUSED" if paused else "RESUMED", time.time() + 1.5
                 elif k == pygame.K_c:
-                    theme_idx = (theme_idx + 1) % len(THEMES)
-                    toast_text, toast_until = f"Theme: {THEMES[theme_idx][0]}", time.time() + 1.8
+                    journey.eye_theme = (journey.eye_theme + 1) % len(EYE_THEMES)
+                    toast_text, toast_until = f"Eye: {EYE_THEMES[journey.eye_theme][0]}", time.time() + 1.8
                 elif k == pygame.K_m:
                     muted = audio.toggle_mute()
                     toast_text, toast_until = "Sound: MUTED" if muted else "Sound: ON", time.time() + 1.5
@@ -1182,7 +1218,7 @@ def main():
         sw, sh = screen.get_size()
         W, H = max(sw // glyphs.cw, 1), max(sh // glyphs.ch, 1)
         screen.fill((0, 0, 0))
-        screen.blit(draw(journey, glyphs, W, H, glow, theme_idx), ((sw - W * glyphs.cw) // 2, (sh - H * glyphs.ch) // 2))
+        screen.blit(draw(journey, glyphs, W, H, glow), ((sw - W * glyphs.cw) // 2, (sh - H * glyphs.ch) // 2))
 
         now = time.time()
         if now < toast_until and toast_text:

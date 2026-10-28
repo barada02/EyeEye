@@ -27,7 +27,7 @@ On Windows you can also use `py -3 eye.py`. You need Python 3 with `numpy` and `
 | 1 - 6            | Jump directly to any world                          |
 | A                | Autoplay the whole journey (good for recording)     |
 | P                | Pause / resume time                                 |
-| C                | Cycle color theme (Amber CRT, Matrix, Cyberpunk...) |
+| C                | Cycle eye style (natural blue, emerald, original)   |
 | M                | Toggle ambient soundscape                           |
 | B                | Blink                                               |
 | + / -            | Bigger / smaller characters                         |
